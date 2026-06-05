@@ -11,7 +11,6 @@ from supabase import create_client
 app = Flask(__name__)
 
 # ==================== လုံခြုံရေးနှင့် ဆက်ရှင် သတ်မှတ်ချက်များ ====================
-# Render ပေါ်တွင် Restart ကျသော်လည်း Session များမပြတ်တောက်စေရန် တည်ငြိမ်သော Secret Key သတ်မှတ်ခြင်း
 app.secret_key = "iptv-gatekeeper-secure-session-key-99988"
 
 # သင့် Supabase Project URL နှင့် API Key များဖြစ်ကြသည်
@@ -79,15 +78,6 @@ def delete_user(username):
         print(f"အသုံးပြုသူဖျက်သိမ်းရာတွင် အမှားရှိပါသည်: {e}")
         return False
 
-def get_all_users():
-    """Supabase ထဲရှိ အသုံးပြုသူအားလုံးကို Admin Panel အတွက် ဆွဲယူခြင်း"""
-    try:
-        res = supabase.table("iptv_users").select("*").execute()
-        return res.data if res.data else []
-    except Exception as e:
-        print(f"အသုံးပြုသူအားလုံးကို ဆွဲယူရာတွင် အမှားရှိပါသည်: {e}")
-        return []
-
 # =====================================================================
 
 # ၅ လုံးတွဲ ကျပန်းစာလုံး ထုတ်ပေးသည့်စနစ်
@@ -113,7 +103,7 @@ def get_client_ip():
     return request.remote_addr
 
 def check_device_access(username, user_data):
-    """1-Device Limit ကို စမတ်ကျကျ စစ်ဆေးပေးမည့်စနစ် (Supabase Database နှင့် တွဲဖက်လုပ်ဆောင်ပါသည်)"""
+    """1-Device Limit ကို စမတ်ကျကျ စစ်ဆေးပေးမည့်စနစ်"""
     client_ip = get_client_ip()
     now = datetime.utcnow()
 
@@ -150,7 +140,8 @@ def check_device_access(username, user_data):
 
 @app.route("/")
 def home():
-    return "<h1>IPTV Gateway is Online (Supabase DB & Site Login Integrated).</h1>"
+    """မူရင်းလင့်ခ်သို့ ဝင်ရောက်လာပါက Admin Panel သို့ တိုက်ရိုက် Auto Redirect လုပ်ပေးခြင်း"""
+    return redirect(url_for("admin_panel"))
 
 
 # --- ADMIN LOGIN ROUTE (ဆိုက်လော့ဂ်အင် စနစ်) ---
@@ -167,7 +158,6 @@ def admin_login():
         else:
             error_msg = "အသုံးပြုသူအမည် သို့မဟုတ် စကားဝှက် မှားယွင်းနေပါသည်။"
 
-    # လှပသော ခေတ်မီဆန်းသစ်သည့် Login Page Template (အရောင် Clashing ဖြစ်မှုများအား လုံးဝ ပြုပြင်ထားပါသည်)
     login_html = """
     <!DOCTYPE html>
     <html lang="en">
@@ -177,7 +167,7 @@ def admin_login():
         <title>IPTV Panel Login</title>
         <script src="https://cdn.tailwindcss.com"></script>
     </head>
-    <body class="bg-gray-950 text-gray-100 flex items-center justify-center min-h-screen p-4">
+    <body class="bg-gray-955 text-gray-100 flex items-center justify-center min-h-screen p-4">
         <div class="bg-gray-900 p-8 rounded-2xl shadow-2xl border border-gray-800 w-full max-w-md">
             <div class="text-center mb-6">
                 <h1 class="text-3xl font-extrabold text-blue-500 tracking-wider">IPTV PANEL</h1>
@@ -224,7 +214,15 @@ def admin_panel():
     if not session.get("admin_logged_in"):
         return redirect(url_for("admin_login"))
 
-    users_list = get_all_users()
+    # Database ချိတ်ဆက်မှု အဆင်ပြေမပြေ စစ်ဆေးရန်နှင့် Error ကို Panel ပေါ်တွင် တိုက်ရိုက်ထုတ်ပြရန် စနစ်
+    users_list = []
+    database_error = None
+    try:
+        res = supabase.table("iptv_users").select("*").execute()
+        users_list = res.data if res.data else []
+    except Exception as e:
+        database_error = str(e)
+        print(f"Error fetching users: {e}")
     
     formatted_users = []
     for data in users_list:
@@ -238,7 +236,7 @@ def admin_panel():
 
     new_user_data = session.pop("new_user_created", None)
 
-    # လှပသော Tailwind CSS Dashboard နှင့် Premium Modal ပါဝင်သော Template
+    # ပရီမီယံ အရည်အသွေးမြင့် Dashboard Template
     html_template = """
     <!DOCTYPE html>
     <html lang="en">
@@ -259,6 +257,15 @@ def admin_panel():
                     ထွက်မည်
                 </a>
             </header>
+
+            <!-- --- DB Error Tracker (ဒေတာဘေ့စ်မှားယွင်းမှုပြသပေးမည့် Box) --- -->
+            {% if db_error %}
+            <div class="bg-red-950/80 border border-red-800 text-red-200 p-5 rounded-2xl mb-8 space-y-2">
+                <h3 class="font-bold text-lg text-red-400 flex items-center gap-2">⚠️ Supabase Database ချိတ်ဆက်မှု အမှားရှိနေပါသည်</h3>
+                <p class="text-xs font-mono bg-black/40 p-3 rounded-lg">{{ db_error }}</p>
+                <p class="text-xs text-gray-400"><strong>ဖြေရှင်းရန်:</strong> Supabase SQL Editor တွင် SQL Code များအား Run ပေးထားခြင်း ရှိမရှိနှင့် Table နာမည် 'iptv_users' ဟုတ်မဟုတ် ပြန်လည်စစ်ဆေးပေးပါဗျာ။</p>
+            </div>
+            {% endif %}
 
             <!-- Control Box -->
             <div class="bg-gray-900 p-6 rounded-2xl shadow-xl border border-gray-800 mb-8 flex flex-col md:flex-row gap-4 items-center justify-between">
@@ -291,7 +298,6 @@ def admin_panel():
                             {% for user in users %}
                             <tr class="border-b border-gray-800 hover:bg-gray-900/50 transition">
                                 <td class="p-4 font-mono font-bold text-yellow-400">{{ user.username }}</td>
-                                <!-- Password အား လုံးဝ အဆင်ပြေစွာ ဖတ်ရှုနိုင်စေရန် text-gray-200 တောက်ပသောအရောင် သတ်မှတ်ထားပါသည် -->
                                 <td class="p-4 font-mono font-semibold text-gray-200">{{ user.password }}</td>
                                 <td class="p-4">
                                     {% if user.locked_ip != 'No Lock' %}
@@ -322,13 +328,22 @@ def admin_panel():
                                 </td>
                             </tr>
                             {% endfor %}
+                            
+                            <!-- အကောင့်လုံးဝမရှိသေးပါက ပြသမည့် စာသား -->
+                            {% if not users and not db_error %}
+                            <tr>
+                                <td colspan="6" class="p-8 text-center text-gray-400 text-sm">
+                                    အသုံးပြုသူအကောင့် လုံးဝမရှိသေးပါ။ အထက်ပါ <strong>"+ Auto Generate Account"</strong> ခလုတ်ကိုနှိပ်၍ အကောင့်အသစ်တစ်ခု စတင်ထုတ်လုပ်ပေးလိုက်ပါဗျာ။
+                                </td>
+                            </tr>
+                            {% endif %}
                         </tbody>
                     </table>
                 </div>
             </div>
         </div>
 
-        <!-- --- BEAUTIFUL MODAL POP-UP (အကောင့်အသစ် ထွက်သည့်သေတ္တာလေး) --- -->
+        <!-- --- BEAUTIFUL MODAL POP-UP --- -->
         {% if new_user %}
         <div id="accountModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 transition duration-300">
             <div class="bg-gray-900 border border-gray-850 p-6 md:p-8 rounded-2xl max-w-xl w-full shadow-2xl space-y-6">
@@ -393,7 +408,7 @@ def admin_panel():
             function copyText(elementId) {
                 var copyText = document.getElementById(elementId);
                 copyText.select();
-                copyText.setSelectionRange(0, 99999); // Mobile Support
+                copyText.setSelectionRange(0, 99999);
                 document.execCommand("copy");
                 
                 var btn = document.getElementById(elementId + "-btn");
@@ -415,7 +430,7 @@ def admin_panel():
     </html>
     """
     base_url = request.host_url.rstrip('/')
-    return render_template_string(html_template, users=formatted_users, new_user=new_user_data, base_url=base_url)
+    return render_template_string(html_template, users=formatted_users, db_error=database_error, new_user=new_user_data, base_url=base_url)
 
 
 # အကောင့်အလိုအလျောက် ဖန်တီးပေးသည့် Route
@@ -434,7 +449,6 @@ def admin_create():
     # Supabase ထဲသို့ အကောင့်သိမ်းဆည်းခြင်း
     create_user(new_user, new_pass)
     
-    # Pop-up Modal တွင် ချပြနိုင်ရန် ဆက်ရှင်ထဲသို့ ယာယီထည့်သွင်းခြင်း
     session["new_user_created"] = {
         "username": new_user,
         "password": new_pass
