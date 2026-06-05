@@ -4,20 +4,24 @@ import re
 import string
 import random
 from datetime import datetime, timedelta
-from flask import Flask, request, Response, jsonify, render_template_string
+from flask import Flask, request, Response, jsonify, render_template_string, session, redirect, url_for
 import requests
 from supabase import create_client
 
 app = Flask(__name__)
 
-# ==================== SUPABASE သတ်မှတ်ချက်များ ====================
-# သင့် Supabase Project URL နှင့် API Key များဖြစ်ကြသည် (Secret API Key ဖြစ်၍ bypass RLS လုပ်ဆောင်နိုင်ပါသည်)
+# ==================== လုံခြုံရေးနှင့် ဆက်ရှင် သတ်မှတ်ချက်များ ====================
+# Render ပေါ်တွင် Restart ကျသော်လည်း Session များမပြတ်တောက်စေရန် တည်ငြိမ်သော Secret Key သတ်မှတ်ခြင်း
+app.secret_key = "iptv-gatekeeper-secure-session-key-99988"
+
+# သင့် Supabase Project URL နှင့် API Key များဖြစ်ကြသည်
 SUPABASE_URL = "https://mykfodrelbkdsmednyka.supabase.co"  
 SUPABASE_KEY = "sb_secret_COWhBX3R6grwer9oMsi00g_t6wmst-U"  
 BUCKET_NAME = "iptv"  
 
-# Admin Dashboard သို့ ဝင်ရောက်ရန် လျှို့ဝှက်ကုဒ် (မိမိစိတ်ကြိုက် ပြောင်းလဲနိုင်သည်)
-ADMIN_SECRET_KEY = "admin123"
+# Admin Panel သို့ ဝင်ရောက်ရန် သတ်မှတ်အကောင့်နှင့် စကားဝှက်
+ADMIN_USERNAME = "admin"
+ADMIN_PASSWORD = "admin123"
 
 # သင့် Supabase Storage မှ ဖိုင်လင့်ခ်အစစ်အမှန်များ
 SUPABASE_M3U_URL = "https://mykfodrelbkdsmednyka.supabase.co/storage/v1/object/public/iptv/ott_updated.m3u"
@@ -116,7 +120,6 @@ def check_device_access(username, user_data):
     locked_ip = user_data.get("locked_ip")
     last_active_str = user_data.get("last_active")
 
-    # ပထမဆုံးအကြိမ် ဝင်ရောက်ခြင်း သို့မဟုတ် IP လုံးဝမရှိသေးပါက IP Lock ချမည်
     if not locked_ip:
         update_user_data(username, {
             "locked_ip": client_ip,
@@ -124,14 +127,12 @@ def check_device_access(username, user_data):
         })
         return True, "IP Locked Successfully"
 
-    # လက်ရှိစက်နှင့် Lock ချထားသော IP တူညီပါက အချိန်အား အပ်ဒိတ်လုပ်ပြီး ဝင်ခွင့်ပေးမည်
     if locked_ip == client_ip:
         update_user_data(username, {
             "last_active": now.isoformat()
         })
         return True, "IP Matched"
 
-    # အကယ်၍ IP မတူညီပါက - နောက်ဆုံးလှုပ်ရှားမှုအချိန်ကို စစ်ဆေးမည် (၁၅ မိနစ်ပြည့်ပါက စက်ပြောင်းခွင့်ပေးမည်)
     if last_active_str:
         last_active = datetime.fromisoformat(last_active_str)
         if now - last_active > timedelta(minutes=15):
@@ -142,7 +143,6 @@ def check_device_access(username, user_data):
             })
             return True, "IP Auto-Transferred"
 
-    # လှုပ်ရှားမှု ရှိနေဆဲဖြစ်ပြီး အခြားစက်မှ လှမ်းဖွင့်ပါက ငြင်းပယ်မည် (1-Device Block)
     return False, f"အကောင့်အား အခြားစက်တစ်ခုတွင် အသုံးပြုနေဆဲဖြစ်ပါသည်။ (Locked IP: {locked_ip})"
 
 
@@ -150,16 +150,81 @@ def check_device_access(username, user_data):
 
 @app.route("/")
 def home():
-    return "<h1>IPTV Gateway is Online (Supabase DB Integrated).</h1>"
+    return "<h1>IPTV Gateway is Online (Supabase DB & Site Login Integrated).</h1>"
 
-# Admin Control Panel စာမျက်နှာ (အကောင့်များ ထုတ်ပေးခြင်းနှင့် စောင့်ကြည့်ခြင်း)
+
+# --- ADMIN LOGIN ROUTE (ဆိုက်လော့ဂ်အင် စနစ်) ---
+@app.route("/admin/login", methods=["GET", "POST"])
+def admin_login():
+    error_msg = None
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+        
+        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+            session["admin_logged_in"] = True
+            return redirect(url_for("admin_panel"))
+        else:
+            error_msg = "အသုံးပြုသူအမည် သို့မဟုတ် စကားဝှက် မှားယွင်းနေပါသည်။"
+
+    # လှပသော ခေတ်မီဆန်းသစ်သည့် Login Page Template
+    login_html = """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>IPTV Panel Login</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+    </head>
+    <body class="bg-gray-950 text-gray-100 flex items-center justify-center min-h-screen p-4">
+        <div class="bg-gray-900 p-8 rounded-2xl shadow-2xl border border-gray-800 w-full max-w-md">
+            <div class="text-center mb-6">
+                <h1 class="text-3xl font-extrabold text-blue-500 tracking-wider">IPTV PANEL</h1>
+                <p class="text-sm text-gray-400 mt-2">စီမံခန့်ခွဲသူစာမျက်နှာသို့ အကောင့်ဝင်ရောက်ပါ</p>
+            </div>
+            
+            {% if error %}
+            <div class="bg-red-950 border border-red-800 text-red-200 text-sm p-3 rounded-lg mb-4 text-center">
+                {{ error }}
+            </div>
+            {% endif %}
+            
+            <form action="/admin/login" method="POST" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Username</label>
+                    <input type="text" name="username" required placeholder="အသုံးပြုသူအမည်" 
+                           class="w-full bg-gray-850 border border-gray-800 focus:border-blue-500 rounded-lg p-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-900/30 transition duration-200">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Password</label>
+                    <input type="password" name="password" required placeholder="စကားဝှက်" 
+                           class="w-full bg-gray-850 border border-gray-800 focus:border-blue-500 rounded-lg p-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-900/30 transition duration-200">
+                </div>
+                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow-lg hover:shadow-blue-900/30 transition duration-200 mt-2">
+                    လော့ဂ်အင်ဝင်မည်
+                </button>
+            </form>
+        </div>
+    </body>
+    </html>
+    """
+    return render_template_string(login_html, error=error_msg)
+
+
+@app.route("/admin/logout")
+def admin_logout():
+    session.pop("admin_logged_in", None)
+    return redirect(url_for("admin_login"))
+
+
+# --- ADMIN CONTROL PANEL ---
 @app.route("/admin")
 def admin_panel():
-    key = request.args.get("key")
-    if key != ADMIN_SECRET_KEY:
-        return "<h1>ဝင်ရောက်ခွင့်မရှိပါ - လျှို့ဝှက်ကုဒ် မမှန်ကန်ပါ။</h1>", 403
+    # အကောင့်ဝင်ထားခြင်း ရှိမရှိ စစ်ဆေးခြင်း
+    if not session.get("admin_logged_in"):
+        return redirect(url_for("admin_login"))
 
-    # Supabase မှ အကောင့်အားလုံးကို ဖတ်ယူခြင်း
     users_list = get_all_users()
     
     # ပြသရန်အတွက် မြန်မာစံတော်ချိန်သို့ ပြောင်းလဲခြင်း
@@ -173,100 +238,197 @@ def admin_panel():
             "created_at": get_myanmar_time(data["created_at"])
         })
 
-    # လှပသော Tailwind CSS အသုံးပြုထားသည့် Dashboard Template
+    # အသစ်ထုတ်လိုက်သောအကောင့်ရှိပါက Pop-up Modal ထဲထည့်ပြရန် session မှ ဆွဲထုတ်ယူခြင်း
+    new_user_data = session.pop("new_user_created", None)
+
+    # လှပသော Tailwind CSS Dashboard နှင့် Premium Modal ပါဝင်သော Template
     html_template = """
     <!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>IPTV User Controller (Cloud DB)</title>
+        <title>IPTV User Controller</title>
         <script src="https://cdn.tailwindcss.com"></script>
     </head>
-    <body class="bg-gray-900 text-gray-100 min-h-screen p-6">
+    <body class="bg-gray-950 text-gray-100 min-h-screen p-4 md:p-6">
         <div class="max-w-6xl mx-auto">
             <header class="flex justify-between items-center mb-8 border-b border-gray-800 pb-4">
-                <h1 class="text-3xl font-extrabold text-blue-500">IPTV Gatekeeper Panel (Cloud DB)</h1>
-                <span class="text-sm text-gray-400">စနစ်စတင်ချိန် (မြန်မာစံတော်ချိန်)</span>
+                <div>
+                    <h1 class="text-2xl md:text-3xl font-extrabold text-blue-500 tracking-wide">IPTV Panel (Cloud DB)</h1>
+                    <p class="text-xs text-gray-400 mt-1">အကောင့်များအားလုံးအား စမတ်ကျကျ စောင့်ကြည့်ထိန်းချုပ်နိုင်သည်</p>
+                </div>
+                <a href="/admin/logout" class="bg-red-950 hover:bg-red-900 text-red-200 border border-red-800 text-xs font-bold py-2 px-4 rounded-lg transition duration-200">
+                    ထွက်မည်
+                </a>
             </header>
 
             <!-- Control Box -->
-            <div class="bg-gray-800 p-6 rounded-lg shadow-lg mb-8 flex flex-col md:flex-row gap-4 items-center justify-between">
+            <div class="bg-gray-900 p-6 rounded-2xl shadow-xl border border-gray-800 mb-8 flex flex-col md:flex-row gap-4 items-center justify-between">
                 <div>
-                    <h2 class="text-xl font-bold mb-2">အကောင့်အသစ် ထုတ်ပေးရန်</h2>
-                    <p class="text-sm text-gray-400">၅ လုံးတွဲ Username နှင့် Password ကို အလိုအလျောက် ထုတ်လုပ်ပြီး Supabase ထဲတွင် သိမ်းဆည်းပါမည်။</p>
+                    <h2 class="text-lg md:text-xl font-bold mb-1">အကောင့်အသစ် ထုတ်ပေးရန်</h2>
+                    <p class="text-xs text-gray-400">၅ လုံးတွဲ Username နှင့် Password ကို အလိုအလျောက် ထုတ်လုပ်ပြီး Supabase ထဲတွင် သိမ်းဆည်းပါမည်။</p>
                 </div>
                 <form action="/admin/create" method="POST" class="flex gap-2">
-                    <input type="hidden" name="key" value="{{ key }}">
-                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded transition duration-200">
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg hover:shadow-blue-900/20 transition duration-200">
                         + Auto Generate Account
                     </button>
                 </form>
             </div>
 
             <!-- Users Table -->
-            <div class="bg-gray-800 rounded-lg shadow-lg overflow-hidden">
-                <table class="w-full text-left border-collapse">
-                    <thead>
-                        <tr class="bg-gray-700 text-gray-200">
-                            <th class="p-4">Username</th>
-                            <th class="p-4">Password</th>
-                            <th class="p-4">Locked IP (Device)</th>
-                            <th class="p-4">နောက်ဆုံးကြည့်ရှုချိန်</th>
-                            <th class="p-4">ဖန်တီးချိန်</th>
-                            <th class="p-4 text-center">လုပ်ဆောင်ချက်</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for user in users %}
-                        <tr class="border-b border-gray-700 hover:bg-gray-750">
-                            <td class="p-4 font-mono font-bold text-yellow-400">{{ user.username }}</td>
-                            <td class="p-4 font-mono">{{ user.password }}</td>
-                            <td class="p-4">
-                                <span class="px-2 py-1 rounded text-xs {{ 'bg-red-900 text-red-200' if user.locked_ip != 'No Lock' else 'bg-green-900 text-green-200' }}">
-                                    {{ user.locked_ip }}
-                                </span>
-                            </td>
-                            <td class="p-4 text-sm text-gray-300">{{ user.last_active }}</td>
-                            <td class="p-4 text-sm text-gray-400">{{ user.created_at }}</td>
-                            <td class="p-4 flex justify-center gap-2">
-                                <form action="/admin/reset-ip" method="POST" class="inline">
-                                    <input type="hidden" name="key" value="{{ key }}">
-                                    <input type="hidden" name="username" value="{{ user.username }}">
-                                    <button type="submit" class="bg-yellow-600 hover:bg-yellow-700 text-white text-xs font-bold py-2 px-3 rounded">
-                                        Reset Device
-                                    </button>
-                                </form>
-                                <form action="/admin/delete" method="POST" class="inline" onsubmit="return confirm('သေချာပါသလား။');">
-                                    <input type="hidden" name="key" value="{{ key }}">
-                                    <input type="hidden" name="username" value="{{ user.username }}">
-                                    <button type="submit" class="bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-2 px-3 rounded">
-                                        Delete
-                                    </button>
-                                </form>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+            <div class="bg-gray-900 rounded-2xl shadow-xl border border-gray-800 overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-gray-800/50 text-gray-300 text-sm border-b border-gray-800">
+                                <th class="p-4">Username</th>
+                                <th class="p-4">Password</th>
+                                <th class="p-4">Locked IP (Device)</th>
+                                <th class="p-4">နောက်ဆုံးကြည့်ရှုချိန်</th>
+                                <th class="p-4">ဖန်တီးချိန်</th>
+                                <th class="p-4 text-center">လုပ်ဆောင်ချက်</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for user in users %}
+                            <tr class="border-b border-gray-800 hover:bg-gray-900/50 transition">
+                                <td class="p-4 font-mono font-bold text-yellow-400">{{ user.username }}</td>
+                                <td class="p-4 font-mono">{{ user.password }}</td>
+                                <td class="p-4">
+                                    {% if user.locked_ip != 'No Lock' %}
+                                    <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-red-950/80 text-red-200 border border-red-900/50">
+                                        {{ user.locked_ip }}
+                                    </span>
+                                    {% else %}
+                                    <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-green-950/80 text-green-200 border border-green-900/50">
+                                        No Lock
+                                    </span>
+                                    {% endif %}
+                                </td>
+                                <td class="p-4 text-xs text-gray-300">{{ user.last_active }}</td>
+                                <td class="p-4 text-xs text-gray-400">{{ user.created_at }}</td>
+                                <td class="p-4 flex justify-center gap-2">
+                                    <form action="/admin/reset-ip" method="POST" class="inline">
+                                        <input type="hidden" name="username" value="{{ user.username }}">
+                                        <button type="submit" class="bg-yellow-600/10 hover:bg-yellow-600/20 text-yellow-400 border border-yellow-800/30 text-xs font-bold py-1.5 px-3 rounded-lg transition duration-150">
+                                            Reset Device
+                                        </button>
+                                    </form>
+                                    <form action="/admin/delete" method="POST" class="inline" onsubmit="return confirm('ဤအကောင့်အား ပယ်ဖျက်ရန် သေချာပါသလား။');">
+                                        <input type="hidden" name="username" value="{{ user.username }}">
+                                        <button type="submit" class="bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-800/30 text-xs font-bold py-1.5 px-3 rounded-lg transition duration-150">
+                                            Delete
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
+
+        <!-- --- BEAUTIFUL MODAL POP-UP (အကောင့်အသစ် ထွက်သည့်သေတ္တာလေး) --- -->
+        {% if new_user %}
+        <div id="accountModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 transition duration-300">
+            <div class="bg-gray-900 border border-gray-800 p-6 md:p-8 rounded-2xl max-w-xl w-full shadow-2xl space-y-6">
+                <div class="text-center">
+                    <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-900/30 text-green-400 mb-3 border border-green-800/30">
+                        ✓
+                    </div>
+                    <h3 class="text-2xl font-extrabold text-green-400">အကောင့်အသစ် ဖန်တီးပြီးပါပြီ။</h3>
+                    <p class="text-xs text-gray-400 mt-1">အသုံးပြုသူအတွက် လင့်ခ်များနှင့် အချက်အလက်များ</p>
+                </div>
+
+                <div class="space-y-4 bg-gray-950 p-4 rounded-xl border border-gray-850">
+                    <!-- Credentials -->
+                    <div class="grid grid-cols-2 gap-4 border-b border-gray-800 pb-3">
+                        <div>
+                            <span class="text-gray-400 text-xs block uppercase">Username</span>
+                            <span class="font-mono text-lg font-bold text-yellow-400">{{ new_user.username }}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-400 text-xs block uppercase">Password</span>
+                            <span class="font-mono text-lg font-bold text-gray-200">{{ new_user.password }}</span>
+                        </div>
+                    </div>
+
+                    <!-- Links with Copy Button -->
+                    <div class="space-y-3 pt-1">
+                        <div>
+                            <span class="text-gray-400 text-xs block mb-1">M3U Playlist URL</span>
+                            <div class="flex gap-2">
+                                <input id="m3uLink" type="text" readonly 
+                                       value="{{ base_url }}/m3u?user={{ new_user.username }}&pass={{ new_user.password }}"
+                                       class="bg-gray-900 border border-gray-800 rounded-lg p-2 text-xs font-mono w-full text-blue-300 focus:outline-none">
+                                <button id="m3uLink-btn" onclick="copyText('m3uLink')" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-2 rounded-lg whitespace-nowrap">
+                                    Copy
+                                </button>
+                            </div>
+                        </div>
+                        <div>
+                            <span class="text-gray-400 text-xs block mb-1">EPG (TV Guide) URL</span>
+                            <div class="flex gap-2">
+                                <input id="epgLink" type="text" readonly 
+                                       value="{{ base_url }}/epg?user={{ new_user.username }}&pass={{ new_user.password }}"
+                                       class="bg-gray-900 border border-gray-800 rounded-lg p-2 text-xs font-mono w-full text-blue-300 focus:outline-none">
+                                <button id="epgLink-btn" onclick="copyText('epgLink')" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-2 rounded-lg whitespace-nowrap">
+                                    Copy
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end pt-2">
+                    <button onclick="closeModal()" class="w-full bg-gray-800 hover:bg-gray-700 text-gray-200 font-bold py-3 rounded-lg border border-gray-750 transition duration-200">
+                        ပိတ်မည်
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            // Clipboard Copy System
+            function copyText(elementId) {
+                var copyText = document.getElementById(elementId);
+                copyText.select();
+                copyText.setSelectionRange(0, 99999); // Mobile Support
+                document.execCommand("copy");
+                
+                // Copy စာသားလေးအား ခဏပြောင်းလဲပြသခြင်း
+                var btn = document.getElementById(elementId + "-btn");
+                var originalText = btn.innerText;
+                btn.innerText = "Copied!";
+                btn.className = "bg-green-600 text-white text-xs font-bold px-3 py-2 rounded-lg whitespace-nowrap";
+                setTimeout(function() {
+                    btn.innerText = originalText;
+                    btn.className = "bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-2 rounded-lg whitespace-nowrap";
+                }, 2000);
+            }
+
+            function closeModal() {
+                document.getElementById("accountModal").classList.add("hidden");
+            }
+        </script>
+        {% endif %}
     </body>
     </html>
     """
-    return render_template_string(html_template, users=formatted_users, key=key)
+    base_url = request.host_url.rstrip('/')
+    return render_template_string(html_template, users=formatted_users, new_user=new_user_data, base_url=base_url)
+
 
 # အကောင့်အလိုအလျောက် ဖန်တီးပေးသည့် Route
 @app.route("/admin/create", methods=["POST"])
 def admin_create():
-    key = request.form.get("key")
-    if key != ADMIN_SECRET_KEY:
+    if not session.get("admin_logged_in"):
         return "Unauthorized", 403
 
-    # ထပ်နေခြင်းမရှိသော ၅ လုံးတွဲ စာလုံးများ ထုတ်ပေးခြင်း
     while True:
         new_user = generate_random_string(5)
-        # database ထဲတွင် ရှိပြီးသားလား တိုက်စစ်သည်
         if not get_user(new_user):
             break
             
@@ -275,50 +437,38 @@ def admin_create():
     # Supabase ထဲသို့ အကောင့်သိမ်းဆည်းခြင်း
     create_user(new_user, new_pass)
     
-    return render_template_string("""
-    <script>
-        alert("အကောင့်အသစ် ဖန်တီးပြီးပါပြီ။\\n\\nUsername: {{ u }}\\nPassword: {{ p }}");
-        window.location.href = "/admin?key=" + "{{ key }}";
-    </script>
-    """, u=new_user, p=new_pass, key=key)
+    # Pop-up Modal တွင် ချပြနိုင်ရန် ဆက်ရှင်ထဲသို့ ယာယီထည့်သွင်းခြင်း
+    session["new_user_created"] = {
+        "username": new_user,
+        "password": new_pass
+    }
+    
+    return redirect(url_for("admin_panel"))
+
 
 # Device IP Lock အား ပြန်လည်ရှင်းလင်းပေးသည့် Route (Reset Device)
 @app.route("/admin/reset-ip", methods=["POST"])
 def admin_reset_ip():
-    key = request.form.get("key")
-    username = request.form.get("username")
-    if key != ADMIN_SECRET_KEY:
+    if not session.get("admin_logged_in"):
         return "Unauthorized", 403
 
-    # Supabase ထဲတွင် IP Lock ကို ရှင်းလင်းသည်
+    username = request.form.get("username")
     update_user_data(username, {
         "locked_ip": None,
         "last_active": None
     })
-        
-    return render_template_string("""
-    <script>
-        alert("Device Lock ကို အောင်မြင်စွာ ရှင်းလင်းပြီးပါပြီ။");
-        window.location.href = "/admin?key=" + "{{ key }}";
-    </script>
-    """, key=key)
+    return redirect(url_for("admin_panel"))
+
 
 # အကောင့်ပယ်ဖျက်သည့် Route
 @app.route("/admin/delete", methods=["POST"])
 def admin_delete():
-    key = request.form.get("key")
-    username = request.form.get("username")
-    if key != ADMIN_SECRET_KEY:
+    if not session.get("admin_logged_in"):
         return "Unauthorized", 403
 
-    # Supabase ထဲမှ အကောင့်ကို ဖျက်ဆီးသည်
+    username = request.form.get("username")
     delete_user(username)
-        
-    return render_template_string("""
-    <script>
-        window.location.href = "/admin?key=" + "{{ key }}";
-    </script>
-    """, key=key)
+    return redirect(url_for("admin_panel"))
 
 
 # ==================== PLAYLIST & STREAM GATEWAY ====================
@@ -329,7 +479,6 @@ def get_m3u():
     user = request.args.get("user")
     pass_word = request.args.get("pass")
 
-    # Supabase Database ထဲမှ အသုံးပြုသူအား စစ်ဆေးခြင်း
     user_data = get_user(user) if user else None
     if not user_data or user_data["password"] != pass_word:
         return Response("ဝင်ရောက်ခွင့်မရှိပါ - Username သို့မဟုတ် Password မှားယွင်းနေပါသည်။", status=403)
@@ -339,8 +488,6 @@ def get_m3u():
     if not allowed:
         return Response(msg, status=403)
 
-    print(f"[APPROVED ACCESS] {user} သည် Playlist အား ရယူနေပါသည်။ IP: {get_client_ip()}")
-    
     try:
         res = requests.get(SUPABASE_M3U_URL)
         m3u_content = res.text
