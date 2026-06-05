@@ -167,7 +167,7 @@ def admin_login():
         else:
             error_msg = "အသုံးပြုသူအမည် သို့မဟုတ် စကားဝှက် မှားယွင်းနေပါသည်။"
 
-    # လှပသော ခေတ်မီဆန်းသစ်သည့် Login Page Template
+    # လှပသော ခေတ်မီဆန်းသစ်သည့် Login Page Template (အရောင် Clashing ဖြစ်မှုများအား လုံးဝ ပြုပြင်ထားပါသည်)
     login_html = """
     <!DOCTYPE html>
     <html lang="en">
@@ -194,12 +194,12 @@ def admin_login():
                 <div>
                     <label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Username</label>
                     <input type="text" name="username" required placeholder="အသုံးပြုသူအမည်" 
-                           class="w-full bg-gray-850 border border-gray-800 focus:border-blue-500 rounded-lg p-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-900/30 transition duration-200">
+                           class="w-full bg-gray-800 border border-gray-750 rounded-lg p-3 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-900/30 transition duration-200">
                 </div>
                 <div>
                     <label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Password</label>
                     <input type="password" name="password" required placeholder="စကားဝှက်" 
-                           class="w-full bg-gray-850 border border-gray-800 focus:border-blue-500 rounded-lg p-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-900/30 transition duration-200">
+                           class="w-full bg-gray-800 border border-gray-750 rounded-lg p-3 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-900/30 transition duration-200">
                 </div>
                 <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow-lg hover:shadow-blue-900/30 transition duration-200 mt-2">
                     လော့ဂ်အင်ဝင်မည်
@@ -221,13 +221,11 @@ def admin_logout():
 # --- ADMIN CONTROL PANEL ---
 @app.route("/admin")
 def admin_panel():
-    # အကောင့်ဝင်ထားခြင်း ရှိမရှိ စစ်ဆေးခြင်း
     if not session.get("admin_logged_in"):
         return redirect(url_for("admin_login"))
 
     users_list = get_all_users()
     
-    # ပြသရန်အတွက် မြန်မာစံတော်ချိန်သို့ ပြောင်းလဲခြင်း
     formatted_users = []
     for data in users_list:
         formatted_users.append({
@@ -238,7 +236,6 @@ def admin_panel():
             "created_at": get_myanmar_time(data["created_at"])
         })
 
-    # အသစ်ထုတ်လိုက်သောအကောင့်ရှိပါက Pop-up Modal ထဲထည့်ပြရန် session မှ ဆွဲထုတ်ယူခြင်း
     new_user_data = session.pop("new_user_created", None)
 
     # လှပသော Tailwind CSS Dashboard နှင့် Premium Modal ပါဝင်သော Template
@@ -294,7 +291,8 @@ def admin_panel():
                             {% for user in users %}
                             <tr class="border-b border-gray-800 hover:bg-gray-900/50 transition">
                                 <td class="p-4 font-mono font-bold text-yellow-400">{{ user.username }}</td>
-                                <td class="p-4 font-mono">{{ user.password }}</td>
+                                <!-- Password အား လုံးဝ အဆင်ပြေစွာ ဖတ်ရှုနိုင်စေရန် text-gray-200 တောက်ပသောအရောင် သတ်မှတ်ထားပါသည် -->
+                                <td class="p-4 font-mono font-semibold text-gray-200">{{ user.password }}</td>
                                 <td class="p-4">
                                     {% if user.locked_ip != 'No Lock' %}
                                     <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-red-950/80 text-red-200 border border-red-900/50">
@@ -333,7 +331,7 @@ def admin_panel():
         <!-- --- BEAUTIFUL MODAL POP-UP (အကောင့်အသစ် ထွက်သည့်သေတ္တာလေး) --- -->
         {% if new_user %}
         <div id="accountModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 transition duration-300">
-            <div class="bg-gray-900 border border-gray-800 p-6 md:p-8 rounded-2xl max-w-xl w-full shadow-2xl space-y-6">
+            <div class="bg-gray-900 border border-gray-850 p-6 md:p-8 rounded-2xl max-w-xl w-full shadow-2xl space-y-6">
                 <div class="text-center">
                     <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-900/30 text-green-400 mb-3 border border-green-800/30">
                         ✓
@@ -342,7 +340,7 @@ def admin_panel():
                     <p class="text-xs text-gray-400 mt-1">အသုံးပြုသူအတွက် လင့်ခ်များနှင့် အချက်အလက်များ</p>
                 </div>
 
-                <div class="space-y-4 bg-gray-950 p-4 rounded-xl border border-gray-850">
+                <div class="space-y-4 bg-gray-950 p-4 rounded-xl border border-gray-800">
                     <!-- Credentials -->
                     <div class="grid grid-cols-2 gap-4 border-b border-gray-800 pb-3">
                         <div>
@@ -383,7 +381,7 @@ def admin_panel():
                 </div>
 
                 <div class="flex justify-end pt-2">
-                    <button onclick="closeModal()" class="w-full bg-gray-800 hover:bg-gray-700 text-gray-200 font-bold py-3 rounded-lg border border-gray-750 transition duration-200">
+                    <button onclick="closeModal()" class="w-full bg-gray-800 hover:bg-gray-700 text-gray-200 font-bold py-3 rounded-lg border border-gray-700 transition duration-200">
                         ပိတ်မည်
                     </button>
                 </div>
@@ -398,7 +396,6 @@ def admin_panel():
                 copyText.setSelectionRange(0, 99999); // Mobile Support
                 document.execCommand("copy");
                 
-                // Copy စာသားလေးအား ခဏပြောင်းလဲပြသခြင်း
                 var btn = document.getElementById(elementId + "-btn");
                 var originalText = btn.innerText;
                 btn.innerText = "Copied!";
