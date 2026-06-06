@@ -27,7 +27,7 @@ SUPABASE_M3U_URL = "https://mykfodrelbkdsmednyka.supabase.co/storage/v1/object/p
 SUPABASE_EPG_URL = "https://mykfodrelbkdsmednyka.supabase.co/storage/v1/object/public/iptv/epg.xml"
 # ===============================================================
 
-# Supabase Client အား ချိတ်ဆက်တည်ဆောက်ခြင်း
+# ⚠️ NameError ထပ်မံမဖြစ်ပွားစေရန်အတွက် 'supabase' variable အား global level တွင် ကြိုတင်သတ်မှတ်ထားခြင်း
 supabase = None
 supabase_init_error = None
 
@@ -38,6 +38,7 @@ try:
     if not SUPABASE_KEY or SUPABASE_KEY.startswith("sb_secret_"):
         raise ValueError("SUPABASE_KEY လွဲမှားနေပါသည်။ 'sb_secret_' ဖြင့်စသော key သည် Supabase CLI key ဖြစ်ပြီး database သုံးရန် မဟုတ်ပါ။ API settings ထဲရှိ 'anon' (public) ဟုခေါ်သော 'eyJ' နှင့်စသည့် Key အရှည်ကြီးကို ကူးယူထည့်သွင်းပေးပါရန်။")
         
+    # Client အောင်မြင်စွာ တည်ဆောက်ခြင်း
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
     supabase_init_error = str(e)
@@ -46,7 +47,8 @@ except Exception as e:
 # ==================== SUPABASE DATABASE FUNCTIONS ====================
 
 def check_supabase():
-    """Supabase Client အဆင်ပြေမပြေ စစ်ဆေးခြင်း"""
+    """Supabase Client အဆင်ပြေမပြေ စစ်ဆေးခြင်း (NameError လုံးဝမတက်စေရန် အကာအကွယ်ပေးထားပါသည်)"""
+    global supabase
     if supabase is None:
         if supabase_init_error:
             raise Exception(f"Supabase Client စတင်တည်ဆောက်ခြင်း မအောင်မြင်ခဲ့ပါ။ အမှားအရင်းမြစ်: {supabase_init_error}")
@@ -54,6 +56,7 @@ def check_supabase():
 
 def get_user(username):
     """Supabase ထဲမှ အသုံးပြုသူတစ်ဦးချင်းစီ၏ အချက်အလက်ကို ရှာဖွေခြင်း"""
+    global supabase
     try:
         check_supabase()
         res = supabase.table("iptv_users").select("*").eq("username", username).execute()
@@ -66,6 +69,7 @@ def get_user(username):
 
 def create_user(username, password):
     """Supabase ထဲတွင် အသုံးပြုသူအသစ် ဖန်တီးထည့်သွင်းခြင်း"""
+    global supabase
     try:
         check_supabase()
         supabase.table("iptv_users").insert({
@@ -82,6 +86,7 @@ def create_user(username, password):
 
 def update_user_data(username, update_data):
     """Supabase ထဲရှိ အသုံးပြုသူ၏ IP သို့မဟုတ် လှုပ်ရှားမှုအချိန်ကို အပ်ဒိတ်လုပ်ခြင်း"""
+    global supabase
     try:
         check_supabase()
         supabase.table("iptv_users").update(update_data).eq("username", username).execute()
@@ -92,6 +97,7 @@ def update_user_data(username, update_data):
 
 def delete_user(username):
     """Supabase ထဲမှ အသုံးပြုသူအား ဖျက်သိမ်းခြင်း"""
+    global supabase
     try:
         check_supabase()
         supabase.table("iptv_users").delete().eq("username", username).execute()
@@ -102,6 +108,7 @@ def delete_user(username):
 
 def get_all_users():
     """Supabase ထဲရှိ အသုံးပြုသူအားလုံးကို Admin Panel အတွက် ဆွဲယူခြင်း"""
+    global supabase
     try:
         check_supabase()
         res = supabase.table("iptv_users").select("*").execute()
