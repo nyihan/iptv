@@ -6,7 +6,6 @@ import random
 from datetime import datetime, timedelta
 from flask import Flask, request, Response, jsonify, render_template_string, session, redirect, url_for
 import requests
-from supabase import create_client
 
 app = Flask(__name__)
 
@@ -27,92 +26,87 @@ SUPABASE_M3U_URL = "https://mykfodrelbkdsmednyka.supabase.co/storage/v1/object/p
 SUPABASE_EPG_URL = "https://mykfodrelbkdsmednyka.supabase.co/storage/v1/object/public/iptv/epg.xml"
 # ===============================================================
 
-# ⚠️ NameError ထပ်မံမဖြစ်ပွားစေရန်အတွက် 'supabase' variable အား global level တွင် ကြိုတင်သတ်မှတ်ထားခြင်း
-supabase = None
-supabase_init_error = None
+# --- Supabase Direct REST API Headers Config ---
+def get_supabase_headers():
+    """Supabase REST API ကို တိုက်ရိုက်ခေါ်ယူရန်အတွက် Header များ သတ်မှတ်ခြင်း"""
+    return {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation"
+    }
 
-try:
-    if not SUPABASE_URL or "mykfodrelbkdsmednyka" not in SUPABASE_URL:
-        raise ValueError("SUPABASE_URL သတ်မှတ်ချက် လွဲမှားနေပါသဖြင့် Project URL အမှန်အား ထည့်သွင်းပေးပါရန်။")
-        
-    if not SUPABASE_KEY or SUPABASE_KEY.startswith("sb_secret_"):
-        raise ValueError("SUPABASE_KEY လွဲမှားနေပါသည်။ 'sb_secret_' ဖြင့်စသော key သည် Supabase CLI key ဖြစ်ပြီး database သုံးရန် မဟုတ်ပါ။ API settings ထဲရှိ 'anon' (public) ဟုခေါ်သော 'eyJ' နှင့်စသည့် Key အရှည်ကြီးကို ကူးယူထည့်သွင်းပေးပါရန်။")
-        
-    # Client အောင်မြင်စွာ တည်ဆောက်ခြင်း
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-except Exception as e:
-    supabase_init_error = str(e)
-    print(f"Supabase initialization failed: {e}")
-
-# ==================== SUPABASE DATABASE FUNCTIONS ====================
-
-def check_supabase():
-    """Supabase Client အဆင်ပြေမပြေ စစ်ဆေးခြင်း (NameError လုံးဝမတက်စေရန် အကာအကွယ်ပေးထားပါသည်)"""
-    global supabase
-    if supabase is None:
-        if supabase_init_error:
-            raise Exception(f"Supabase Client စတင်တည်ဆောက်ခြင်း မအောင်မြင်ခဲ့ပါ။ အမှားအရင်းမြစ်: {supabase_init_error}")
-        raise Exception("Supabase Client ကို စတင်တည်ဆောက်ထားခြင်း မရှိသေးပါ။ URL နှင့် Key အား ပြန်လည်စစ်ဆေးပါ။")
+# ==================== SUPABASE DIRECT REST DATABASE FUNCTIONS ====================
 
 def get_user(username):
-    """Supabase ထဲမှ အသုံးပြုသူတစ်ဦးချင်းစီ၏ အချက်အလက်ကို ရှာဖွေခြင်း"""
-    global supabase
+    """Supabase REST API မှတစ်ဆင့် အသုံးပြုသူတစ်ဦးချင်းစီ၏ အချက်အလက်ကို ရှာဖွေခြင်း"""
     try:
-        check_supabase()
-        res = supabase.table("iptv_users").select("*").eq("username", username).execute()
-        if res.data:
-            return res.data[0]
+        url = f"{SUPABASE_URL}/rest/v1/iptv_users"
+        headers = get_supabase_headers()
+        params = {"username": f"eq.{username}"}
+        res = requests.get(url, headers=headers, params=params, timeout=10)
+        res.raise_for_status()
+        data = res.json()
+        if data and len(data) > 0:
+            return data[0]
     except Exception as e:
         print(f"အသုံးပြုသူရှာဖွေရာတွင် အမှားရှိပါသည်: {e}")
         raise e
     return None
 
 def create_user(username, password):
-    """Supabase ထဲတွင် အသုံးပြုသူအသစ် ဖန်တီးထည့်သွင်းခြင်း"""
-    global supabase
+    """Supabase REST API မှတစ်ဆင့် အသုံးပြုသူအသစ် ဖန်တီးထည့်သွင်းခြင်း"""
     try:
-        check_supabase()
-        supabase.table("iptv_users").insert({
+        url = f"{SUPABASE_URL}/rest/v1/iptv_users"
+        headers = get_supabase_headers()
+        payload = {
             "username": username,
             "password": password,
             "locked_ip": None,
             "last_active": None,
             "created_at": datetime.utcnow().isoformat()
-        }).execute()
+        }
+        res = requests.post(url, headers=headers, json=payload, timeout=10)
+        res.raise_for_status()
         return True
     except Exception as e:
         print(f"အသုံးပြုသူအသစ်ဖန်တီးရာတွင် အမှားရှိပါသည်: {e}")
         raise e
 
 def update_user_data(username, update_data):
-    """Supabase ထဲရှိ အသုံးပြုသူ၏ IP သို့မဟုတ် လှုပ်ရှားမှုအချိန်ကို အပ်ဒိတ်လုပ်ခြင်း"""
-    global supabase
+    """Supabase REST API မှတစ်ဆင့် အသုံးပြုသူ၏ IP သို့မဟုတ် လှုပ်ရှားမှုအချိန်ကို အပ်ဒိတ်လုပ်ခြင်း"""
     try:
-        check_supabase()
-        supabase.table("iptv_users").update(update_data).eq("username", username).execute()
+        url = f"{SUPABASE_URL}/rest/v1/iptv_users"
+        headers = get_supabase_headers()
+        params = {"username": f"eq.{username}"}
+        res = requests.patch(url, headers=headers, params=params, json=update_data, timeout=10)
+        res.raise_for_status()
         return True
     except Exception as e:
         print(f"ဒေတာအပ်ဒိတ်လုပ်ရာတွင် အမှားရှိပါသည်: {e}")
         raise e
 
 def delete_user(username):
-    """Supabase ထဲမှ အသုံးပြုသူအား ဖျက်သိမ်းခြင်း"""
-    global supabase
+    """Supabase REST API မှတစ်ဆင့် အသုံးပြုသူအား ဖျက်သိမ်းခြင်း"""
     try:
-        check_supabase()
-        supabase.table("iptv_users").delete().eq("username", username).execute()
+        url = f"{SUPABASE_URL}/rest/v1/iptv_users"
+        headers = get_supabase_headers()
+        params = {"username": f"eq.{username}"}
+        res = requests.delete(url, headers=headers, params=params, timeout=10)
+        res.raise_for_status()
         return True
     except Exception as e:
         print(f"အသုံးပြုသူဖျက်သိမ်းရာတွင် အမှားရှိပါသည်: {e}")
         raise e
 
 def get_all_users():
-    """Supabase ထဲရှိ အသုံးပြုသူအားလုံးကို Admin Panel အတွက် ဆွဲယူခြင်း"""
-    global supabase
+    """Supabase REST API မှတစ်ဆင့် အသုံးပြုသူအားလုံးကို Admin Panel အတွက် ဆွဲယူခြင်း"""
     try:
-        check_supabase()
-        res = supabase.table("iptv_users").select("*").execute()
-        return res.data if res.data else []
+        url = f"{SUPABASE_URL}/rest/v1/iptv_users"
+        headers = get_supabase_headers()
+        res = requests.get(url, headers=headers, timeout=10)
+        res.raise_for_status()
+        return res.json()
     except Exception as e:
         print(f"အသုံးပြုသူအားလုံးကို ဆွဲယူရာတွင် အမှားရှိပါသည်: {e}")
         raise e
@@ -256,14 +250,11 @@ def admin_panel():
     users_list = []
     database_error = None
     
-    if supabase_init_error:
-        database_error = supabase_init_error
-    else:
-        try:
-            users_list = get_all_users()
-        except Exception as e:
-            database_error = str(e)
-            print(f"Error fetching users: {e}")
+    try:
+        users_list = get_all_users()
+    except Exception as e:
+        database_error = str(e)
+        print(f"Error fetching users: {e}")
     
     formatted_users = []
     for data in users_list:
