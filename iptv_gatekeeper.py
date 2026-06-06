@@ -290,7 +290,7 @@ def admin_panel():
                 </a>
             </header>
 
-            <!-- --- DB Error Tracker (ဒေတာဘေ့စ်မှားယွင်းမှုပြသပေးမည့် Box) --- -->
+            <!-- --- DB Error Tracker --- -->
             {% if db_error %}
             <div class="bg-red-950/80 border border-red-800 text-red-200 p-5 rounded-2xl mb-8 space-y-2 shadow-xl">
                 <h3 class="font-bold text-lg text-red-400 flex items-center gap-2">⚠️ Supabase Database ချိတ်ဆက်မှု အမှားရှိနေပါသည်</h3>
@@ -547,13 +547,26 @@ def get_m3u():
             if line_strip.startswith("#EXTM3U"):
                 line_strip = re.sub(r'x-tvg-url="[^"]*"', f'x-tvg-url="{secure_epg_url}"', line_strip)
                 new_m3u_lines.append(line_strip)
+            elif line_strip.startswith("#EXTINF"):
+                # IPTV Player များ ရုပ်သံလိုင်းများအား တိုက်ရိုက် ချောမွေ့စွာ ဖွင့်ကြည့်နိုင်ရန် user-agent တိုက်ရိုက် ကြားညှပ်ထည့်ပေးခြင်း
+                if 'user-agent=' not in line_strip:
+                    line_strip = line_strip.replace("#EXTINF:", '#EXTINF: user-agent="vj-14-1ogfiva" ')
+                new_m3u_lines.append(line_strip)
             elif line_strip.startswith("http://") or line_strip.startswith("https://"):
                 secure_live_url = f"{base_url}/live?user={user}&pass={pass_word}&orig={line_strip}"
                 new_m3u_lines.append(secure_live_url)
             else:
                 new_m3u_lines.append(line)
                 
-        return Response("\n".join(new_m3u_lines), mimetype="text/plain")
+        # Windows / Android TV IPTV Player အားလုံး အလွယ်တကူ ဖတ်ရှုနိုင်စေရန် \r\n (CRLF) ဖြင့် ပြန်လည်ပေါင်းစည်းခြင်း
+        m3u_output_data = "\r\n".join(new_m3u_lines)
+        
+        # IPTV Player များ Playlist အဖြစ် တိကျစွာ လက်ခံနိုင်ရန် application/x-mpegurl နှင့် Content-Disposition သတ်မှတ်ခြင်း
+        headers = {
+            "Content-Type": "application/x-mpegurl; charset=utf-8",
+            "Content-Disposition": 'attachment; filename="playlist.m3u"'
+        }
+        return Response(m3u_output_data, headers=headers)
     except Exception as e:
         return Response(f"အမှားအယွင်းရှိပါသည်: {e}", status=500)
 
@@ -593,7 +606,11 @@ def get_epg():
 
     try:
         res = requests.get(SUPABASE_EPG_URL)
-        return Response(res.text, mimetype="text/xml")
+        headers = {
+            "Content-Type": "application/xml; charset=utf-8",
+            "Content-Disposition": 'inline; filename="epg.xml"'
+        }
+        return Response(res.text, headers=headers)
     except Exception as e:
         return Response(f"Error: {e}", status=500)
 
